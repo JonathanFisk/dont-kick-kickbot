@@ -169,6 +169,39 @@ function drawPixelTextOutlined(text, x, y, scale, color, outlineColor) {
   drawPixelText(text, x, y, scale, color);
 }
 
+// ---- Touch Support ----
+
+function isTouchDevice() {
+  return "ontouchstart" in window || navigator.maxTouchPoints > 0;
+}
+
+const showTouchUI = isTouchDevice();
+
+// Map a touch event's clientX/Y to 800x500 canvas coordinates
+function touchToCanvas(touch) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: ((touch.clientX - rect.left) / rect.width) * W,
+    y: ((touch.clientY - rect.top) / rect.height) * H,
+  };
+}
+
+// Ultra kick button bounds (canvas coords)
+const ULTRA_BTN = { x: 680, y: 390, w: 100, h: 50 };
+
+function isUltraButtonTap(pos) {
+  return (
+    pos.x >= ULTRA_BTN.x &&
+    pos.x <= ULTRA_BTN.x + ULTRA_BTN.w &&
+    pos.y >= ULTRA_BTN.y &&
+    pos.y <= ULTRA_BTN.y + ULTRA_BTN.h
+  );
+}
+
+// Swipe tracking for character select
+let _touchStartX = 0;
+let _touchStartY = 0;
+
 // ---- White Background Removal ----
 
 function removeWhiteBackground(img) {
@@ -799,6 +832,140 @@ window.addEventListener("keydown", (e) => {
   // Kick check happens when strike lands (after windup)
 });
 
+// ---- Touch Input ----
+
+canvas.addEventListener("touchstart", (e) => {
+  e.preventDefault();
+  ensureAudio();
+  unlockAudio();
+
+  const touch = e.touches[0];
+  const pos = touchToCanvas(touch);
+  _touchStartX = touch.clientX;
+  _touchStartY = touch.clientY;
+
+  if (game.screen === "title") {
+    stopTitleMusic();
+    startSelectMusic();
+    game.screen = "select";
+    return;
+  }
+
+  if (game.screen === "instructions") {
+    game.screen = "game";
+    game.gameTime = 0;
+    startMusic();
+    tryFullscreenLandscape();
+    return;
+  }
+
+  if (game.screen === "award") {
+    playSample(assets.grimace02Sound, 0.8);
+    stopAllMusic();
+    startSelectMusic();
+    game.screen = "select";
+    game.score = 0;
+    game.combo = 0;
+    game.bossIndex = 0;
+    game.hitsOnBoss = 0;
+    game.rankIndex = -1;
+    game.gameTime = 0;
+    game.speedFactor = 1;
+    game.particles = [];
+    game.kickbot.state = "idle";
+    game.player.state = "idle";
+    game.tauntBubbleTimer = 0;
+    game.bannerTimer = 0;
+    game.ultraFlash = 0;
+    _tintCache = { tint: null, alpha: 0, canvas: null };
+    return;
+  }
+
+  if (game.screen === "select") {
+    // Tap on a character portrait to select/confirm
+    const portraitW = 120;
+    const portraitH = 160;
+    const gap = 30;
+    const totalW = CHARACTERS.length * portraitW + (CHARACTERS.length - 1) * gap;
+    const startX = (W - totalW) / 2;
+    const portraitY = 100;
+
+    for (let i = 0; i < CHARACTERS.length; i++) {
+      const x = startX + i * (portraitW + gap);
+      if (pos.x >= x && pos.x <= x + portraitW && pos.y >= portraitY && pos.y <= portraitY + portraitH) {
+        if (i === game.selectedIndex) {
+          // Tap the already-selected character to confirm
+          playSample(assets.gongSound, 1.0);
+          stopSelectMusic();
+          game.screen = "instructions";
+          game.blinkTimer = 0;
+        } else {
+          game.selectedIndex = i;
+          playSample(assets.whipSound, 0.7);
+        }
+        return;
+      }
+    }
+
+    // Fallback: tap left half = prev, right half = next
+    if (pos.x < W / 2) {
+      game.selectedIndex = (game.selectedIndex - 1 + CHARACTERS.length) % CHARACTERS.length;
+      playSample(assets.whipSound, 0.7);
+    } else {
+      game.selectedIndex = (game.selectedIndex + 1) % CHARACTERS.length;
+      playSample(assets.whipSound, 0.7);
+    }
+    return;
+  }
+
+  if (game.screen === "game") {
+    if (game.player.state !== "idle") return;
+
+    if (isUltraButtonTap(pos)) {
+      // Ultra kick
+      game.player.isUltraKick = true;
+      game.player.state = "ultraspin";
+      game.player.timer = 0;
+      playSample(assets.ultraVoiceSound, 1.0);
+    } else {
+      // Regular kick
+      game.player.isUltraKick = false;
+      game.player.state = "windup";
+      game.player.timer = 0;
+    }
+    return;
+  }
+}, { passive: false });
+
+// Swipe detection for character select
+canvas.addEventListener("touchend", (e) => {
+  if (game.screen !== "select") return;
+  const touch = e.changedTouches[0];
+  const dx = touch.clientX - _touchStartX;
+  if (Math.abs(dx) > 50) {
+    if (dx < 0) {
+      game.selectedIndex = (game.selectedIndex + 1) % CHARACTERS.length;
+    } else {
+      game.selectedIndex = (game.selectedIndex - 1 + CHARACTERS.length) % CHARACTERS.length;
+    }
+    playSample(assets.whipSound, 0.7);
+  }
+}, { passive: true });
+
+// Try fullscreen + landscape lock on game start (for mobile)
+function tryFullscreenLandscape() {
+  if (!showTouchUI) return;
+  const el = document.documentElement;
+  if (el.requestFullscreen) {
+    el.requestFullscreen().catch(() => {});
+  } else if (el.webkitRequestFullscreen) {
+    el.webkitRequestFullscreen();
+  }
+  if (screen.orientation && screen.orientation.lock) {
+    screen.orientation.lock("landscape").catch(() => {});
+  }
+}
+
 toggleSoundBtn.addEventListener("click", () => {
   ensureAudio();
   // First click ever: just unlock audio and start music (don't toggle off)
@@ -1338,9 +1505,10 @@ function drawTitleScreen() {
     drawPixelTextCenteredMultiline(ch.name, cx + ch.w / 2, charY + ch.h + 8, 2, "#9db2d8");
   }
 
-  // --- Blinking "PRESS SPACE" at bottom ---
+  // --- Blinking prompt at bottom ---
   if (Math.floor(t * 2.5) % 2 === 0) {
-    drawPixelTextCentered("PRESS SPACE", W / 2, H - 28, 3, "#ffffff");
+    const titlePrompt = showTouchUI ? "TAP TO START" : "PRESS SPACE";
+    drawPixelTextCentered(titlePrompt, W / 2, H - 28, 3, "#ffffff");
   }
 
   // --- Subtle pulsing glow behind the title ---
@@ -1387,8 +1555,32 @@ function drawSelectScreen() {
     drawPixelTextCenteredMultiline(CHARACTERS[i].name, x + portraitW / 2, portraitY + portraitH + 14, 2, nameColor);
   }
 
-  drawPixelTextCentered("ARROWS TO MOVE", W / 2, H - 80, 3, "#ffffff");
-  drawPixelTextCentered("SPACE TO LOCK IN", W / 2, H - 50, 3, "#ffd84a");
+  if (showTouchUI) {
+    // Arrow indicators on screen edges
+    ctx.fillStyle = "#ffd84a";
+    ctx.globalAlpha = 0.5 + Math.sin(game.blinkTimer * 3) * 0.3;
+    // Left arrow
+    ctx.beginPath();
+    ctx.moveTo(30, portraitY + portraitH / 2);
+    ctx.lineTo(50, portraitY + portraitH / 2 - 20);
+    ctx.lineTo(50, portraitY + portraitH / 2 + 20);
+    ctx.closePath();
+    ctx.fill();
+    // Right arrow
+    ctx.beginPath();
+    ctx.moveTo(W - 30, portraitY + portraitH / 2);
+    ctx.lineTo(W - 50, portraitY + portraitH / 2 - 20);
+    ctx.lineTo(W - 50, portraitY + portraitH / 2 + 20);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    drawPixelTextCentered("TAP CHARACTER TO SELECT", W / 2, H - 80, 3, "#ffffff");
+    drawPixelTextCentered("TAP AGAIN TO LOCK IN", W / 2, H - 50, 3, "#ffd84a");
+  } else {
+    drawPixelTextCentered("ARROWS TO MOVE", W / 2, H - 80, 3, "#ffffff");
+    drawPixelTextCentered("SPACE TO LOCK IN", W / 2, H - 50, 3, "#ffd84a");
+  }
 }
 
 function drawKickbot() {
@@ -1883,6 +2075,38 @@ function drawBanner() {
 
 // ---- Main Render ----
 
+function drawUltraButton() {
+  if (!showTouchUI) return;
+  const { x, y, w, h } = ULTRA_BTN;
+  const canKick = game.player.state === "idle";
+
+  // Button background
+  const alpha = canKick ? 0.9 : 0.35;
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = canKick ? "#ff3d6e" : "#552233";
+  ctx.fillRect(x, y, w, h);
+
+  // Border
+  ctx.strokeStyle = canKick ? "#ffd84a" : "#553344";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(x, y, w, h);
+
+  // Pulsing glow when available
+  if (canKick) {
+    const pulse = 0.15 + Math.sin(game.kickbot.idleTime * 4) * 0.1;
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = "#ffd84a";
+    ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
+  }
+
+  ctx.globalAlpha = 1;
+
+  // Text
+  const textColor = canKick ? "#ffffff" : "#886677";
+  drawPixelTextCentered("ULTRA", x + w / 2, y + 8, 2, textColor);
+  drawPixelTextCentered("KICK", x + w / 2, y + 28, 2, textColor);
+}
+
 function renderGameScreen() {
   const shakeX = game.shake > 0.1 ? (Math.random() - 0.5) * game.shake : 0;
   const shakeY = game.shake > 0.1 ? (Math.random() - 0.5) * game.shake : 0;
@@ -1893,6 +2117,7 @@ function renderGameScreen() {
   drawKickbot();
   drawPlayerCharacter();
   drawTimingBar();
+  drawUltraButton();
   drawHUD();
   drawParticles();
   drawHitText();
@@ -2128,7 +2353,8 @@ function drawAwardScreen() {
 
   // Play again prompt
   if (Math.floor(t * 2.5) % 2 === 0) {
-    drawPixelTextCentered("PRESS SPACE TO PLAY AGAIN", W / 2, H - 28, 3, "#ffffff");
+    const replayText = showTouchUI ? "TAP TO PLAY AGAIN" : "PRESS SPACE TO PLAY AGAIN";
+    drawPixelTextCentered(replayText, W / 2, H - 28, 3, "#ffffff");
   }
 }
 
@@ -2151,12 +2377,18 @@ function drawInstructionsScreen() {
   }
 
   // Instructions text
-  drawPixelTextCentered("SPACE = KICK", W / 2, 270, 3, "#ffd84a");
-  drawPixelTextCentered("SHIFT + SPACE = ULTRAKICK", W / 2, 310, 3, "#ffd84a");
+  if (showTouchUI) {
+    drawPixelTextCentered("TAP = KICK", W / 2, 270, 3, "#ffd84a");
+    drawPixelTextCentered("TAP ULTRA BUTTON = ULTRAKICK", W / 2, 310, 3, "#ffd84a");
+  } else {
+    drawPixelTextCentered("SPACE = KICK", W / 2, 270, 3, "#ffd84a");
+    drawPixelTextCentered("SHIFT + SPACE = ULTRAKICK", W / 2, 310, 3, "#ffd84a");
+  }
 
   // Blinking prompt
   if (Math.floor(t * 2.5) % 2 === 0) {
-    drawPixelTextCentered("PRESS SPACE TO BEGIN", W / 2, H - 28, 3, "#ffffff");
+    const beginText = showTouchUI ? "TAP TO BEGIN" : "PRESS SPACE TO BEGIN";
+    drawPixelTextCentered(beginText, W / 2, H - 28, 3, "#ffffff");
   }
 }
 

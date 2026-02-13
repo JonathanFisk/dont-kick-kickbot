@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Don't Kick Kick Bot</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -10,6 +10,12 @@
   <div class="cabinet">
     <canvas id="game" width="800" height="500" aria-label="Game canvas"></canvas>
     <button id="toggleSound" aria-label="Toggle sound">SOUND: ON</button>
+  </div>
+  <div id="orientationOverlay">
+    <div class="orientation-message">
+      <div class="orientation-icon">&#x1F4F1;&#x21BB;</div>
+      <p>Rotate your phone for the best experience</p>
+    </div>
   </div>
   <script src="script.js"></script>
 </body>
