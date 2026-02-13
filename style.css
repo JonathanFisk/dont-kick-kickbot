@@ -32,7 +32,8 @@ body {
 }
 
 #game {
-  width: min(100%, 800px);
+  /* Fit within viewport while maintaining 800:500 (1.6:1) aspect ratio */
+  width: min(100vw, 800px, calc(100dvh * 1.6));
   height: auto;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
@@ -106,8 +107,8 @@ body {
   }
 }
 
-/* Mobile: strip cabinet chrome and fill viewport */
-@media (max-width: 840px) and (hover: none) and (pointer: coarse) {
+/* Touch devices: strip cabinet chrome */
+@media (hover: none) and (pointer: coarse) {
   body {
     touch-action: none;
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
@@ -123,13 +124,11 @@ body {
   #game {
     border: none;
     box-shadow: none;
-    width: 100%;
-    max-height: 100dvh;
   }
 }
 
-/* Portrait orientation: show overlay on mobile */
-@media (max-width: 840px) and (orientation: portrait) and (hover: none) and (pointer: coarse) {
+/* Portrait orientation: show overlay on touch devices */
+@media (orientation: portrait) and (hover: none) and (pointer: coarse) {
   #orientationOverlay {
     display: flex;
   }

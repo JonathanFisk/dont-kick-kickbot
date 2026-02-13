@@ -186,15 +186,16 @@ function touchToCanvas(touch) {
   };
 }
 
-// Ultra kick button bounds (canvas coords)
+// Touch button bounds (canvas coords)
+const KICK_BTN  = { x: 680, y: 330, w: 100, h: 50 };
 const ULTRA_BTN = { x: 680, y: 390, w: 100, h: 50 };
 
-function isUltraButtonTap(pos) {
+function isBtnTap(pos, btn) {
   return (
-    pos.x >= ULTRA_BTN.x &&
-    pos.x <= ULTRA_BTN.x + ULTRA_BTN.w &&
-    pos.y >= ULTRA_BTN.y &&
-    pos.y <= ULTRA_BTN.y + ULTRA_BTN.h
+    pos.x >= btn.x &&
+    pos.x <= btn.x + btn.w &&
+    pos.y >= btn.y &&
+    pos.y <= btn.y + btn.h
   );
 }
 
@@ -921,18 +922,19 @@ canvas.addEventListener("touchstart", (e) => {
   if (game.screen === "game") {
     if (game.player.state !== "idle") return;
 
-    if (isUltraButtonTap(pos)) {
+    if (isBtnTap(pos, ULTRA_BTN)) {
       // Ultra kick
       game.player.isUltraKick = true;
       game.player.state = "ultraspin";
       game.player.timer = 0;
       playSample(assets.ultraVoiceSound, 1.0);
-    } else {
+    } else if (isBtnTap(pos, KICK_BTN)) {
       // Regular kick
       game.player.isUltraKick = false;
       game.player.state = "windup";
       game.player.timer = 0;
     }
+    // Tapping elsewhere does nothing
     return;
   }
 }, { passive: false });
@@ -2075,14 +2077,35 @@ function drawBanner() {
 
 // ---- Main Render ----
 
+function drawKickButton() {
+  if (!showTouchUI) return;
+  const { x, y, w, h } = KICK_BTN;
+  const canKick = game.player.state === "idle";
+
+  // Button background
+  ctx.globalAlpha = canKick ? 0.9 : 0.35;
+  ctx.fillStyle = canKick ? "#4488ff" : "#223355";
+  ctx.fillRect(x, y, w, h);
+
+  // Border
+  ctx.strokeStyle = canKick ? "#5effd8" : "#334455";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(x, y, w, h);
+
+  ctx.globalAlpha = 1;
+
+  // Text
+  const textColor = canKick ? "#ffffff" : "#667788";
+  drawPixelTextCentered("KICK", x + w / 2, y + 18, 3, textColor);
+}
+
 function drawUltraButton() {
   if (!showTouchUI) return;
   const { x, y, w, h } = ULTRA_BTN;
   const canKick = game.player.state === "idle";
 
   // Button background
-  const alpha = canKick ? 0.9 : 0.35;
-  ctx.globalAlpha = alpha;
+  ctx.globalAlpha = canKick ? 0.9 : 0.35;
   ctx.fillStyle = canKick ? "#ff3d6e" : "#552233";
   ctx.fillRect(x, y, w, h);
 
@@ -2117,6 +2140,7 @@ function renderGameScreen() {
   drawKickbot();
   drawPlayerCharacter();
   drawTimingBar();
+  drawKickButton();
   drawUltraButton();
   drawHUD();
   drawParticles();
@@ -2376,10 +2400,34 @@ function drawInstructionsScreen() {
     ctx.drawImage(img, x, y, drawW, drawH);
   }
 
-  // Instructions text
+  // Instructions text + button mockups
   if (showTouchUI) {
-    drawPixelTextCentered("TAP = KICK", W / 2, 270, 3, "#ffd84a");
-    drawPixelTextCentered("TAP ULTRA BUTTON = ULTRAKICK", W / 2, 310, 3, "#ffd84a");
+    // Draw mockup KICK button
+    const mockKickX = W / 2 - 120;
+    const mockY = 270;
+    const mockW = 80;
+    const mockH = 40;
+
+    ctx.fillStyle = "#4488ff";
+    ctx.fillRect(mockKickX, mockY, mockW, mockH);
+    ctx.strokeStyle = "#5effd8";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(mockKickX, mockY, mockW, mockH);
+    drawPixelTextCentered("KICK", mockKickX + mockW / 2, mockY + 14, 2, "#ffffff");
+    drawPixelTextCentered("= KICK", mockKickX + mockW + 60, mockY + 10, 3, "#ffd84a");
+
+    // Draw mockup ULTRA button
+    const mockUltraX = W / 2 - 120;
+    const mockUltraY = 325;
+
+    ctx.fillStyle = "#ff3d6e";
+    ctx.fillRect(mockUltraX, mockUltraY, mockW, mockH);
+    ctx.strokeStyle = "#ffd84a";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(mockUltraX, mockUltraY, mockW, mockH);
+    drawPixelTextCentered("ULTRA", mockUltraX + mockW / 2, mockUltraY + 6, 2, "#ffffff");
+    drawPixelTextCentered("KICK", mockUltraX + mockW / 2, mockUltraY + 22, 2, "#ffffff");
+    drawPixelTextCentered("= ULTRAKICK", mockUltraX + mockW + 90, mockUltraY + 10, 3, "#ffd84a");
   } else {
     drawPixelTextCentered("SPACE = KICK", W / 2, 270, 3, "#ffd84a");
     drawPixelTextCentered("SHIFT + SPACE = ULTRAKICK", W / 2, 310, 3, "#ffd84a");

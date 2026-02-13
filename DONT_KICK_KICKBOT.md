@@ -2,17 +2,18 @@
 
 ## Summary
 
-Browser-based, 8-bit arcade game inspired by Punch-Out!!. The player uses a timing bar and the **Space** key to kick a big, pixel-art robotic rabbit ("Kickbot"). Features a title screen, character selection, 5 boss phases with unique visual accessories, combo scoring, speed ramp, an Ultra Kick mechanic, a 90-second game timer, an award ceremony screen with medals/ranks presented by "Magnificent Scrondo," chiptune music per screen, audio SFX, and high-pitched text-to-speech taunts.
+Browser-based, 8-bit arcade game inspired by Punch-Out!!. The player uses a timing bar to kick a big, pixel-art robotic rabbit ("Kickbot"). Playable on **desktop** (keyboard) and **mobile/tablet** (touch) — the canvas stays 800x500 internally with touch UI layered on top for touch devices. Features a title screen, character selection, instructions screen, 5 boss phases with unique visual accessories, combo scoring, speed ramp, an Ultra Kick mechanic, a 60-second game timer, an award ceremony screen with medals/ranks presented by "Magnificent Scrondo," chiptune music per screen, audio SFX, and high-pitched text-to-speech taunts.
 
 ---
 
 ## Target Platform
 
-- **Web browser** (desktop first, playable on laptop)
-- **Input**: Keyboard only
+- **Web browser** (desktop + mobile)
+- **Input**: Keyboard (desktop) or touch (mobile/tablet)
 - **Rendering**: HTML5 Canvas (800 x 500), pixel-art aesthetic
 - **Canvas setting**: `imageSmoothingEnabled = false` throughout
 - **Frame rate**: `requestAnimationFrame` (browser refresh rate), dt capped at 50 ms
+- **Mobile**: Viewport hardened (no zoom/scroll), orientation overlay suggests landscape, optional fullscreen + landscape lock on game start
 
 ---
 
@@ -20,9 +21,9 @@ Browser-based, 8-bit arcade game inspired by Punch-Out!!. The player uses a timi
 
 | File | Purpose |
 |------|---------|
-| `index.html` | Single-page entry, loads `style.css` + `script.js`, contains canvas + sound toggle button |
-| `style.css` | Arcade cabinet layout, dark theme, pixelated canvas rendering, responsive |
-| `script.js` | All game logic, rendering, audio, animation, and input handling (~1985 lines) |
+| `index.html` | Single-page entry, loads `style.css` + `script.js`, contains canvas + sound toggle button + orientation overlay div |
+| `style.css` | Arcade cabinet layout, dark theme, pixelated canvas rendering, responsive, mobile viewport hardening, orientation overlay |
+| `script.js` | All game logic, rendering, audio, animation, keyboard input, and touch input handling |
 | `DONT_KICK_KICKBOT.md` | This documentation file |
 | `index_old.html` | Archived previous version |
 | `script_old.js` | Archived previous version |
@@ -38,8 +39,11 @@ All stored in `assets/`. PNGs have transparent backgrounds.
 
 | File | Used For |
 |------|----------|
-| `titlesplash.png` | Title screen (currently not rendered — custom title screen is drawn instead) |
+| `titlesplash.png` | Title screen (loaded but not rendered — custom title screen is drawn instead) |
 | `kickbot.png` | Main Kickbot sprite, displayed in title screen + gameplay |
+| `logo.png` | Title screen logo image (upper-left) |
+| `letskick.png` | Instructions screen splash image |
+| `goldenbootmedal.png` | Golden boot medal image on award screen |
 | `boots.png` | Player character: Boots |
 | `squash.png` | Player character: Squash |
 | `bonsoo.png` | Player character: Bonsoo |
@@ -51,72 +55,96 @@ All stored in `assets/`. PNGs have transparent backgrounds.
 | File | Used For |
 |------|----------|
 | `grimace.m4a` | Kickbot pain sound on hit (plays 200 ms after punch) |
+| `Kickbot grimace 02.wav` | Secondary grimace sound (used on Ultra Kick hit + award screen replay) |
 | `punch.mp3` | Impact sound on successful kick |
 | `woosh.mp3` | Whiff sound on miss |
+| `gong.mp3` | Gong sound when confirming character selection |
+| `whip.mp3` | Whip sound when cycling through characters on select screen |
 | `ultra kick voice title.mp3` | Voice clip on Ultra Kick activation |
 | `ultra kick mouth harp.mp3` | Mouth harp sting after Ultra Kick lands (300 ms delay) |
 
-### Audio (In Folder but NOT Loaded)
+### Assets (In Folder but NOT Loaded)
 
 | File | Notes |
 |------|-------|
-| `gong.mp3` | Present in assets folder, not referenced in code |
-| `whip.mp3` | Present in assets folder, not referenced in code |
+| `reward boot.png` | Present in assets folder, not referenced in code |
 
 ---
 
 ## Game Screens & Flow
 
 ```
-TITLE  --[Space]-->  CHARACTER SELECT  --[Space]-->  GAMEPLAY (90s)  --[timer expires]-->  AWARD
-                         ^                                                                   |
-                         |___________________________[Space]_________________________________|
+TITLE  --[Space/Tap]-->  SELECT  --[Space/Tap]-->  INSTRUCTIONS  --[Space/Tap]-->  GAMEPLAY (60s)  --[timer]-->  AWARD
+                           ^                                                                                       |
+                           |_______________________________________[Space/Tap]_____________________________________|
 ```
 
 ### 1) Title Screen (`game.screen = "title"`)
 
-- **Background**: Solid black with scanline overlay
-- **Kickbot**: Large sprite (280 x 340) in upper-right corner, bobbing + slight rotation sway
-- **Title text**: "DON'T KICK" in large white pixel text (scale 6), "KICKBOT!" in gold pixel text (scale 7) on a blue banner (#2060cc)
+- **Background**: Solid dark (#0a0818) with rotating subtle blue rays, scanline overlay, confetti shower (40 particles in 5 colors)
+- **Kickbot**: Large sprite (280 x 340) in upper-right corner, bobbing + slight rotation sway, with 5 orbiting gold stars
+- **Logo**: `logo.png` displayed upper-left (190 px tall, proportional width), with subtle vertical bob
 - **Characters**: All 4 characters lined up along the bottom with idle bob + sway animations, names displayed below each in #9db2d8
   - Order (left to right): Dropkick Mary, Bonsoo, Squash, Boots
-- **Prompt**: "PRESS SPACE" blinking at bottom center (toggles at 2.5 Hz)
+- **Prompt**: Blinking at bottom center (toggles at 2.5 Hz)
+  - Desktop: "PRESS SPACE"
+  - Touch: "TAP TO START"
 - **Pulsing glow**: Subtle radial gradient behind the title
-- **Music**: Title music starts on first user interaction (keydown or click)
-- **Transition**: Space → Character Select
+- **Music**: Title music starts on first user interaction (keydown, click, or touchstart)
+- **Transition**: Space or Tap → Character Select
 
 ### 2) Character Select Screen (`game.screen = "select"`)
 
 - **Background**: Dark stage with perspective grid floor
 - **Header**: "CHOOSE YOUR KICKER" in gold pixel text (scale 4)
-- **Character portraits**: 4 characters displayed as 120 x 160 images, side by side with 30 px gaps, centered
+- **Character portraits**: 4 characters displayed as 120 x 160 images, side by side with 30 px gaps, centered at y=100
 - **Selection highlight**: Yellow (#ffd84a) 4 px stroke border around selected character
 - **Character names**: Displayed below portraits, gold when selected, #9db2d8 otherwise
-- **Instructions**: "ARROWS TO MOVE" (white) + "SPACE TO LOCK IN" (gold) at bottom
-- **Input**: Left/Right arrows cycle selection, Space confirms
+- **Instructions** (conditional):
+  - Desktop: "ARROWS TO MOVE" (white) + "SPACE TO LOCK IN" (gold)
+  - Touch: "TAP CHARACTER TO SELECT" (white) + "TAP AGAIN TO LOCK IN" (gold)
+- **Touch arrow indicators**: Pulsing gold triangles on left/right screen edges (touch devices only)
+- **Input**:
+  - Desktop: Left/Right arrows cycle selection, Space confirms
+  - Touch: Tap portrait to select, tap selected portrait to confirm, tap left/right halves as fallback, swipe left/right (>50 px threshold)
+- **Sound**: Whip sound on character change, gong sound on confirm
 - **Music**: Select music plays
-- **Transition**: Space → Gameplay (resets game timer to 0)
+- **Transition**: Space/Tap on selected → Instructions screen
 
-### 3) Gameplay Screen (`game.screen = "game"`)
+### 3) Instructions Screen (`game.screen = "instructions"`)
 
-- **Duration**: 90 seconds (`game.gameDuration`)
+- **Background**: Dark stage with perspective grid floor
+- **Image**: `letskick.png` centered in upper portion (300 px wide, proportionally scaled)
+- **Instructions** (conditional):
+  - Desktop: "SPACE = KICK" + "SHIFT + SPACE = ULTRAKICK"
+  - Touch: Visual mockups of the KICK button (blue) and ULTRA button (red) with labels "= KICK" and "= ULTRAKICK"
+- **Prompt**: Blinking at bottom center
+  - Desktop: "PRESS SPACE TO BEGIN"
+  - Touch: "TAP TO BEGIN"
+- **Transition**: Space or Tap → Gameplay (resets game timer, starts music; on touch also requests fullscreen + landscape lock)
+
+### 4) Gameplay Screen (`game.screen = "game"`)
+
+- **Duration**: 60 seconds (`game.gameDuration`)
 - **Background**: Dark stage (#0b1020) with perspective grid floor (starts at y=350), horizontal lines every 18 px, converging vertical lines, subtle spotlight gradient
 - **Kickbot**: Centered, with boss-specific tint/accessories/aura, idle bob
 - **Player character**: Lower-center (slightly left), mirrored horizontally, with animation states
 - **Timing bar**: At bottom of screen (y = H-40), 600 px wide
-- **HUD**: Score, combo, speed, level, boss HP bar, timer, rank
+- **HUD**: Score, combo, speed, level, boss HP bar, circular timer, rank
+- **Touch buttons** (touch only): Two stacked buttons at bottom-right — blue KICK button (x:680 y:330) and red ULTRA KICK button (x:680 y:390), both 100x50 px. Dim when player is mid-animation, light up when idle.
 - **Transition**: Timer expires → Award screen
 
-### 4) Award Screen (`game.screen = "award"`)
+### 5) Award Screen (`game.screen = "award"`)
 
 - **Background**: Dark (#080412) with rotating golden rays from center
 - **Left side**: Magnificent Scrondo sprite (160 x 200, bobbing) with name below in purple
 - **Right side**: Selected player character (100 x 130, bobbing) with name below
-- **Center**: "TIME'S UP!" header (red, scale 5), final score + level reached, medal with laurels, rank title in gold, Scrondo speech in purple
-- **Medal**: Tier-based (bronze → diamond) with increasing visual complexity (laurels, stars, sparkles)
-- **Prompt**: "PRESS SPACE TO PLAY AGAIN" blinking at bottom
+- **Center**: "TIME'S UP!" header (red, scale 5), final score + level reached, golden boot medal(s) from `goldenbootmedal.png` (count = level number), rank title in gold, Scrondo speech in purple
+- **Prompt**: Blinking at bottom
+  - Desktop: "PRESS SPACE TO PLAY AGAIN"
+  - Touch: "TAP TO PLAY AGAIN"
 - **Music**: Victory fanfare loop
-- **Transition**: Space → Character Select (full game state reset)
+- **Transition**: Space or Tap → Character Select (full game state reset)
 
 ---
 
@@ -128,7 +156,7 @@ TITLE  --[Space]-->  CHARACTER SELECT  --[Space]-->  GAMEPLAY (90s)  --[timer ex
 - **Base speed**: 0.6 full sweeps per second
 - **Effective speed**: `baseSpeed * speedFactor`
 - White cursor/marker moves along the bar
-- Player presses Space when cursor is within the target zones (centered at 0.5)
+- Player presses Space (or taps) when cursor is within the target zones (centered at 0.5)
 
 ### Target Zones
 
@@ -151,9 +179,10 @@ TITLE  --[Space]-->  CHARACTER SELECT  --[Space]-->  GAMEPLAY (90s)  --[timer ex
 - On miss: `speedFactor = 1 + boss.speedBonus` (combo resets so speed drops)
 - Gets brutal fast — by combo 5 the bar is moving at 2.0x + boss bonus
 
-### Ultra Kick (Shift + Space)
+### Ultra Kick
 
-- **Activation**: Hold Shift and press Space during gameplay (player must be idle)
+- **Desktop activation**: Hold Shift and press Space during gameplay (player must be idle)
+- **Touch activation**: Tap the ULTRA KICK button (bottom-right of screen, only visible on touch devices)
 - **Animation**: Player spins 3 full rotations over 0.6 s (ultraspin state), then transitions to normal windup → strike → recover
 - **Audio**: Plays `ultra kick voice title.mp3` immediately, `ultra kick mouth harp.mp3` 300 ms after landing
 - **On hit**:
@@ -174,7 +203,7 @@ TITLE  --[Space]-->  CHARACTER SELECT  --[Space]-->  GAMEPLAY (90s)  --[timer ex
 | # | Name | Hits to Advance | Speed Bonus | Tint Color | Accessory |
 |---|------|-----------------|-------------|------------|-----------|
 | 1 | KICKMASTER | 5 | +0.0 | #ff3d6e (red) | None (the rookie) |
-| 2 | SUPER KICK FACE | 7 | +0.1 | #5effd8 (teal) | Headband with knot tails |
+| 2 | SUPER KICK FACE | 7 | +0.1 | #5effd8 (teal) | None |
 | 3 | KICKY PANTZ | 9 | +0.2 | #ffd84a (gold) | Angular sunglasses with dark lenses |
 | 4 | DOOZY DIPPER | 11 | +0.3 | #c6a7ff (purple) | Mohawk spikes (5 spikes) |
 | 5 | SHOE HEAD | 13 | +0.4 | #ff8ad1 (pink) | Evil crown with jewel + pulsing red eyes |
@@ -243,8 +272,8 @@ Current rank is displayed in the HUD (bottom-left, gold text) and on the award s
 | State | Trigger | Duration | Description |
 |-------|---------|----------|-------------|
 | `idle` | Default | Continuous | Gentle vertical bob (`sin(t*3) * 2`) |
-| `ultraspin` | Shift+Space | 0.6 s | 3 full rotations, bobs upward in arc, transitions to `windup` |
-| `windup` | Space (or after ultraspin) | 0.1 s | Crouch back (offsetX: -25, lean back -0.15 rad, slight squash). **Kick check happens at end.** |
+| `ultraspin` | Ultra Kick | 0.6 s | 3 full rotations, bobs upward in arc, transitions to `windup` |
+| `windup` | Kick (or after ultraspin) | 0.1 s | Crouch back (offsetX: -25, lean back -0.15 rad, slight squash). **Kick check happens at end.** |
 | `strike` | After windup | 0.28 s | 3 phases: explosive lunge (0-0.08s), flip rotation (0.08-0.18s), hold at contact (0.18-0.28s) |
 | `recover` | After strike | 0.3 s | Ease-out bounce back to idle position |
 | `stumble` | On miss | 0.5 s | Stumble backward (-35 px) with slight wobble, then return |
@@ -283,7 +312,7 @@ If `kickbot.png` fails to load, a simple pixel-art rectangle fallback is drawn (
 | Particles | 10 gold | 18 gold + 10 red | 30 gold + 20 red + 15 white |
 | Stars | 1.5 s | 1.5 s | 3.0 s |
 | Cross-eyes | Yes | Yes | Yes |
-| Sound | punch.mp3 + grimace (200 ms delay) + bell ding (1047 Hz) | punch.mp3 + grimace + bell ding (1320 Hz, louder) | Same as perfect + ultra harp (300 ms delay) |
+| Sound | punch.mp3 + grimace (200 ms delay) + bell ding (1047 Hz) | punch.mp3 + grimace + bell ding (1320 Hz, louder) | Same as perfect + grimace02 (200 ms) + ultra harp (300 ms delay) |
 
 ### On Miss
 
@@ -299,7 +328,7 @@ If `kickbot.png` fails to load, a simple pixel-art rectangle fallback is drawn (
 - Spawn from impact point (center, y=240)
 - Random angles and speeds (60-120 px/s)
 - Gravity applied (100 px/s^2)
-- Lifespan: 0.8–1.2 s, fade with remaining life
+- Lifespan: 0.8-1.2 s, fade with remaining life
 - Rendered as 4x4 pixel squares
 
 ### Speech Bubble
@@ -373,51 +402,57 @@ Speech index is `game.score % speeches.length`.
 
 ### Web Audio Context
 
-- Created on first user interaction (keydown or click)
+- Created on first user interaction (keydown, click, or touchstart)
 - Auto-resumes if suspended
 
 ### Synthesized Music
 
 Each screen has its own chiptune melody loop built from Web Audio oscillators.
 
-#### Title Music
-- **Style**: Triumphant, ascending — "Gonna Fly Now" inspired
-- **Waveform**: Triangle (warm, brass-like)
+#### Title Music — "Dance of the Knights" (Prokofiev, C minor)
+- **Style**: Heavy, menacing march — ominous staccato, dark and imposing
+- **Waveform**: Square (dark stabbing brass) + triangle bass (octave below) + sine sub-bass
 - **Structure**: 4 phrases x 16 notes (64 total), looping
-  - Phrase A: Horn fanfare, ascending 4ths/5ths
-  - Phrase B: Soaring upward climb (with bass harmony)
-  - Phrase C: Triumphant peak (with octave harmony + bass)
-  - Phrase D: Driving rhythm, resolve back to base
-- **Rhythm**: Kick drum every 4 beats, snare on 2 and 4
-- **Tempo**: 170 ms per beat
+  - Phrase A: Menacing march, heavy staccato
+  - Phrase B: Darker chromatic descent
+  - Phrase C: Rising threat
+  - Phrase D: Ominous resolution
+- **Rhythm**: Heavy march drum boom every 2 beats
+- **Tempo**: 180 ms per beat
 
-#### Character Select Music
-- **Style**: Training montage energy, motivational
-- **Waveform**: Square (punchy) + triangle bass
+#### Character Select Music — "Entry of the Gods into Valhalla" (Wagner, D major)
+- **Style**: Majestic brass Valhalla leitmotif, stately and grand
+- **Waveform**: Triangle (warm sustained brass) + triangle bass + triangle 5th harmony
 - **Structure**: 4 phrases x 16 notes (64 total), looping
-  - Phrase A: Punchy staccato
-  - Phrase B: Building intensity
-  - Phrase C: Quick ascending runs
-  - Phrase D: Resolve with swagger
-- **Rhythm**: Hi-hat every beat, kick on 1 & 3, snare on 2 & 4
-- **Tempo**: 130 ms per beat
+  - Phrase A: Valhalla motif, broad brass statement
+  - Phrase B: Majestic descent
+  - Phrase C: Ascending the rainbow bridge (with octave shimmer + sub-bass)
+  - Phrase D: Noble resolution back to tonic
+- **Rhythm**: Timpani boom every 4 beats
+- **Tempo**: 220 ms per beat
 
-#### Gameplay Music
-- **Style**: Dramatic arc — builds tension, releases, repeats
-- **Waveform**: Alternates square (phrases A/C) and triangle (phrases B/D)
+#### Gameplay Music — "Ride of the Valkyries" (Wagner, B minor)
+- **Style**: Galloping triplet charge, warlike brass horn calls
+- **Waveform**: Square (aggressive brass) + triangle bass (octave below)
 - **Structure**: 4 phrases x 8 notes (32 total), looping
-  - Phrase A: Rising action
-  - Phrase B: Tension peak (with harmony at 1.5x frequency)
-  - Phrase C: Resolution drop
-  - Phrase D: Dramatic stab + pauses (with harmony)
+  - Phrase A: Galloping Valkyrie charge
+  - Phrase B: Horn call soaring upward (with high harmony)
+  - Phrase C: "Ho-jo-to-ho!" battle cry peak (with high harmony)
+  - Phrase D: Thundering descent and reset
 - **Boss scaling**: Pitch shifts up by `1 + bossIndex * 0.08`, volume increases by `0.005` per boss
-- **Tempo**: 200 ms per beat
+- **Rhythm**: Galloping percussion every 3 beats
+- **Tempo**: 160 ms per beat
 
-#### Award Fanfare
-- **Style**: Victory celebration
-- **Waveform**: Triangle melody + sine bass harmony (0.5x frequency)
-- **Structure**: 36 notes, looping with pauses
-- **Tempo**: 250 ms per beat
+#### Award Fanfare — Horn Concerto No. 4, K.495 (Mozart, Eb major)
+- **Style**: Bright, jaunty horn Rondo theme, celebratory
+- **Waveform**: Triangle melody + sine bass (0.5x frequency) + square shimmer on phrases B/D
+- **Structure**: 4 phrases x 16 notes (64 total), looping
+  - Phrase A: Famous horn Rondo call
+  - Phrase B: Ascending answer, building joy
+  - Phrase C: Playful descent
+  - Phrase D: Triumphant wrap back to tonic
+- **Rhythm**: Light tapping every 4 beats
+- **Tempo**: 170 ms per beat
 
 ### SFX
 
@@ -425,10 +460,13 @@ Each screen has its own chiptune melody loop built from Web Audio oscillators.
 |-------|--------|---------|
 | Kick (hit) | `punch.mp3` | Volume 0.8 (normal) or 1.0 (perfect) |
 | Grimace (pain) | `grimace.m4a` | Plays 200 ms after punch, volume 0.8 |
+| Grimace 02 | `Kickbot grimace 02.wav` | Plays on Ultra Kick hit (200 ms delay) + on award screen replay, volume 0.8 |
 | Bell ding | Synthesized sine | 1047 Hz (hit) or 1320 Hz (perfect), 0.4 s duration |
 | Miss whoosh | `woosh.mp3` | Volume 0.7 |
-| Laugh (miss) | Synthesized square | Two descending beeps (260 Hz → 200 Hz) |
-| Whoosh (swing) | Synthesized sawtooth | Frequency sweep 650 → 140 Hz over 0.18 s |
+| Laugh (miss) | Synthesized square | Two descending beeps (260 Hz -> 200 Hz) |
+| Whoosh (swing) | Synthesized sawtooth | Frequency sweep 650 -> 140 Hz over 0.18 s |
+| Gong | `gong.mp3` | Plays on character select confirm, volume 1.0 |
+| Whip | `whip.mp3` | Plays on character selection change, volume 0.7 |
 | Ultra voice | `ultra kick voice title.mp3` | Plays on Ultra Kick activation, volume 1.0 |
 | Ultra harp | `ultra kick mouth harp.mp3` | Plays 300 ms after Ultra Kick lands, volume 1.0 |
 
@@ -439,12 +477,80 @@ Each screen has its own chiptune melody loop built from Web Audio oscillators.
 | Element | Position | Details |
 |---------|----------|---------|
 | Score | Top-left | "SCORE {n}" — white, scale 3 |
-| Combo | Below score | "COMBO {n}" — #9db2d8, scale 2 |
+| Combo | Below score | "COMBO {n}" — #9db2d8, scale 2 (only shown when combo > 1) |
 | Speed | Below combo | "SPEED {n.n}X" — gold, scale 2 |
 | Level | Top-center | "LVL {n}" — boss tint color, scale 3 |
-| Timer | Below level | "{n}S" countdown — #9db2d8 (red when ≤10 s), scale 2 |
-| Boss HP | Top-right | "BOSS HP" label + colored bar (green > 50%, gold > 25%, red ≤ 25%) + "{n} LEFT" |
+| Boss HP | Top-right | "BOSS HP" label + colored bar (green > 50%, gold > 25%, red <= 25%) + "{n} LEFT" |
 | Rank | Below speed | Current rank title — gold, scale 2 (only if earned) |
+| Timer | Bottom-left | Circular pie chart (radius 22), fills clockwise. Color: blue (<50%), gold (50-80%), red (>80%) |
+| Kick button | Bottom-right (upper) | Touch devices only. Blue (#4488ff) button (100x50 px at x:680 y:330), teal border when available, dims when player is animating. "KICK" in pixel text. |
+| Ultra Kick button | Bottom-right (lower) | Touch devices only. Red (#ff3d6e) button (100x50 px at x:680 y:390), pulsing gold border when available, dims when player is animating. "ULTRA KICK" in pixel text. |
+
+---
+
+## Mobile Touch Support
+
+### Detection
+
+- `isTouchDevice()` checks `"ontouchstart" in window || navigator.maxTouchPoints > 0`
+- `showTouchUI` flag is set once at load — all touch-specific rendering and text is gated behind this flag
+- Desktop users see zero changes
+
+### Viewport & CSS Hardening
+
+- **Viewport meta**: `maximum-scale=1, user-scalable=no, viewport-fit=cover`
+- **Body**: `overflow: hidden; position: fixed; overscroll-behavior: none; 100dvh`
+- **Canvas**: `touch-action: none; user-select: none`
+- **Mobile media query** (`hover: none, pointer: coarse`): strips cabinet borders/padding/shadows, fills viewport, adds `env(safe-area-inset-*)` for notch handling
+
+### Coordinate Mapping
+
+`touchToCanvas(touch)` maps `touch.clientX/Y` to 800x500 canvas coordinates using `canvas.getBoundingClientRect()`.
+
+### Touch Handlers
+
+- `canvas.addEventListener("touchstart", ...)` with `{ passive: false }` — `e.preventDefault()` blocks zoom/scroll
+- `canvas.addEventListener("touchend", ...)` — swipe detection for character select (>50 px horizontal threshold)
+
+### Orientation Overlay
+
+- `#orientationOverlay` div with phone rotate icon + "Rotate your phone for the best experience" message
+- CSS-only: `display: flex` via `@media (max-width: 840px) and (orientation: portrait) and (hover: none) and (pointer: coarse)`
+- No JavaScript needed — purely CSS media query driven
+
+### Fullscreen & Orientation Lock
+
+- `tryFullscreenLandscape()` called when transitioning from instructions → gameplay on touch
+- Requests `document.documentElement.requestFullscreen()` (or webkit prefix)
+- Requests `screen.orientation.lock("landscape")`
+- Both fail silently if unsupported (wrapped in `.catch(() => {})`)
+
+### Touch Buttons (Gameplay)
+
+Two on-screen buttons are drawn on the canvas during gameplay — only when `showTouchUI` is true. Tapping elsewhere on the canvas does nothing during gameplay.
+
+**KICK Button** (upper):
+- Drawn via `drawKickButton()`, canvas coordinates: `{ x: 680, y: 330, w: 100, h: 50 }`
+- **Available** (player idle): Blue (#4488ff) background, teal (#5effd8) border, white text
+- **Unavailable** (player animating): Dark (#223355) background, dim border, muted text
+
+**ULTRA KICK Button** (lower):
+- Drawn via `drawUltraButton()`, canvas coordinates: `{ x: 680, y: 390, w: 100, h: 50 }`
+- **Available** (player idle): Red (#ff3d6e) background, gold (#ffd84a) pulsing border, white text
+- **Unavailable** (player animating): Dark (#552233) background, dim border, muted text
+
+Hit detection: `isBtnTap(pos, btn)` checks if touch coordinates fall within either button's bounds.
+
+### Touch Control Summary
+
+| Screen | Touch Action | Replaces |
+|--------|-------------|----------|
+| Title | Tap anywhere | Space |
+| Select | Tap portrait / swipe / tap halves | Arrows + Space |
+| Instructions | Tap anywhere | Space |
+| Gameplay | Tap KICK button = kick | Space |
+| Gameplay | Tap ULTRA button = ultra kick | Shift+Space |
+| Award | Tap anywhere | Space |
 
 ---
 
@@ -453,28 +559,39 @@ Each screen has its own chiptune melody loop built from Web Audio oscillators.
 Custom bitmap font rendered via Canvas `fillRect`.
 
 - **Glyph size**: 5 columns x 7 rows per character
-- **Supported characters**: A–Z, 0–9, `! ? . : - + ' , / [space]`
+- **Supported characters**: A-Z, 0-9, `! ? . : - + ' , = / [space]`
 - **Encoding**: Each row is a string of `"0"` and `"1"` (e.g., `"01110"`)
 - **Functions**:
   - `drawPixelText(text, x, y, scale, color)` — draw left-aligned
   - `measurePixelText(text, scale)` — returns `{width, height}`
   - `drawPixelTextCentered(text, cx, y, scale, color)` — draw horizontally centered
   - `drawPixelTextCenteredMultiline(text, cx, y, scale, color)` — splits on spaces, one word per line
+  - `drawPixelTextOutlined(text, x, y, scale, color, outlineColor)` — draw with 1-pixel outline in 8 directions
 
 ---
 
 ## Input Summary
 
-| Key | Title Screen | Character Select | Gameplay | Award Screen |
-|-----|-------------|-----------------|----------|--------------|
-| **Space** | Go to Select | Lock in character | Attempt kick | Go to Select (replay) |
-| **Shift+Space** | — | — | Ultra Kick | — |
-| **Left Arrow** | — | Previous character | — | — |
-| **Right Arrow** | — | Next character | — | — |
-| **Click** | Unlock audio | — | — | — |
+### Keyboard (Desktop)
+
+| Key | Title Screen | Character Select | Instructions | Gameplay | Award Screen |
+|-----|-------------|-----------------|--------------|----------|--------------|
+| **Space** | Go to Select | Lock in character | Start game | Attempt kick | Go to Select (replay) |
+| **Shift+Space** | — | — | — | Ultra Kick | — |
+| **Left Arrow** | — | Previous character | — | — | — |
+| **Right Arrow** | — | Next character | — | — | — |
+
+### Touch (Mobile)
+
+| Gesture | Title Screen | Character Select | Instructions | Gameplay | Award Screen |
+|---------|-------------|-----------------|--------------|----------|--------------|
+| **Tap** | Go to Select | Select character (tap portrait) / Confirm (tap selected) / Navigate (tap halves) | Start game | — | Go to Select (replay) |
+| **Tap KICK button** | — | — | — | Regular kick | — |
+| **Tap ULTRA button** | — | — | — | Ultra Kick | — |
+| **Swipe L/R** | — | Cycle characters | — | — | — |
 
 - Kicks are blocked during animation (player state must be `idle`)
-- First interaction (key or click) initializes Web Audio + starts title music
+- First interaction (key, click, or touch) initializes Web Audio + starts title music
 
 ---
 
@@ -500,37 +617,48 @@ Key `game` properties:
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `screen` | string | `"title"` / `"select"` / `"game"` / `"award"` |
-| `selectedIndex` | number | Currently selected character (0–3) |
+| `screen` | string | `"title"` / `"select"` / `"instructions"` / `"game"` / `"award"` |
+| `selectedIndex` | number | Currently selected character (0-3) |
 | `score` | number | Cumulative score |
 | `combo` | number | Current hit streak |
-| `bossIndex` | number | Current boss (0–4) |
+| `bossIndex` | number | Current boss (0-4) |
 | `hitsOnBoss` | number | Hits landed on current boss |
-| `barPos` | number | Timing bar position (0.0–1.0) |
+| `barPos` | number | Timing bar position (0.0-1.0) |
 | `barDir` | number | Bar direction (1 = right, -1 = left) |
 | `baseSpeed` | number | Base sweep speed (0.6) |
 | `speedFactor` | number | Current speed multiplier |
 | `gameTime` | number | Elapsed game time in seconds |
-| `gameDuration` | number | Total game duration (90 s) |
-| `rankIndex` | number | Highest rank earned (-1 = none, 0–4) |
+| `gameDuration` | number | Total game duration (60 s) |
+| `rankIndex` | number | Highest rank earned (-1 = none, 0-4) |
 | `shake` | number | Screen shake intensity (decays at 20/s) |
 | `earthquakeTimer` | number | Sustained shake duration (Ultra Kick) |
 | `hitFlash` | number | Screen-wide gold flash timer |
+| `ultraFlash` | number | Screen-wide white flash timer (Ultra Kick) |
 | `particles` | array | Active particle effects |
 | `tauntText` | string | Current speech bubble text |
 | `tauntBubbleTimer` | number | Speech bubble visibility timer |
 | `banner` | string | Boss advance banner text |
 | `bannerTimer` | number | Banner visibility timer |
 | `starsTimer` | number | Orbiting stars duration |
-| `blinkTimer` | number | Title/award screen animation timer |
+| `blinkTimer` | number | Title/award/instructions screen animation timer |
+
+---
+
+## Version History
+
+| Version | Tag | Description |
+|---------|-----|-------------|
+| v1.0 | `v1.0-desktop-only` | Desktop-only, keyboard input, no touch support |
+| v2.0 | `main` (current) | Added mobile touch support, orientation overlay, Ultra Kick button, conditional UI text, viewport hardening. Desktop unchanged. |
 
 ---
 
 ## Known Implementation Notes
 
 - `titlesplash.png` is loaded but the title screen renders a custom layout instead of displaying it
-- `gong.mp3` and `whip.mp3` exist in assets but are not loaded or used
-- There is a redundant `break` after the `stumble` case in `updatePlayerAnim` (line ~1015) — harmless but dead code
+- `reward boot.png` exists in assets folder but is not loaded or used
+- There is a redundant `break` after the `stumble` case in `updatePlayerAnim` — harmless but dead code
 - The `removeWhiteBackground` function exists but is never called
 - Boss banner for boss 0 ("KICKMASTER") is never shown since you start on that boss
 - Award screen Scrondo speech selection uses `score % speeches.length` which creates a deterministic-feeling pick based on final score
+- Boss 2 ("SUPER KICK FACE") has no visual accessory despite the original design calling for a headband
